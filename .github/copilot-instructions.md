@@ -1,5 +1,10 @@
 # Copilot Instructions
 
+## Workflow Rules
+
+- **Do not `git push` unless explicitly told to do so by the user.**
+- **Do not `git push` untested code.** Always verify changes work on the cluster before committing and pushing.
+
 ## Project Overview
 
 Infrastructure repo for a **hands-on workshop** (10–15 participants, groups of 2–3). Each group works in their own Kubernetes namespace and gets 1 time-sliced GPU share. The workshop deploys LLM inference using **vLLM production stack** and **llm-d** on a shared GKE Autopilot cluster with NVIDIA GPU time-slicing.
