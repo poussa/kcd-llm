@@ -9,6 +9,9 @@ set -euo pipefail
 PROJECT_ID="${PROJECT_ID:-kcd-llm}"
 CLUSTER_NAME="${CLUSTER_NAME:-kcd-llm-cluster}"
 REGION="${REGION:-europe-west4}"
+NETWORK="${NETWORK:-default}"
+PROXY_SUBNET_NAME="${PROXY_SUBNET_NAME:-proxy-only-subnet}"
+PROXY_SUBNET_RANGE="${PROXY_SUBNET_RANGE:-10.0.0.0/23}"
 
 # ── Argument parsing ───────────────────────────────────────────────────────────
 DELETE_MODE=false
@@ -41,6 +44,7 @@ echo "==> Enabling required APIs"
 gcloud services enable \
   container.googleapis.com \
   compute.googleapis.com \
+  networkservices.googleapis.com \
   --project="${PROJECT_ID}"
 
 echo "==> Creating GKE Autopilot cluster in region '${REGION}'"
@@ -52,6 +56,21 @@ else
     --project="${PROJECT_ID}" \
     --region="${REGION}" \
     --release-channel="regular"
+fi
+
+echo "==> Creating proxy-only subnet for GKE Gateway (internal/external LB)"
+if gcloud compute networks subnets describe "${PROXY_SUBNET_NAME}" \
+    --region="${REGION}" --project="${PROJECT_ID}" &>/dev/null; then
+  echo "    Proxy-only subnet '${PROXY_SUBNET_NAME}' already exists, skipping."
+else
+  gcloud compute networks subnets create "${PROXY_SUBNET_NAME}" \
+    --project="${PROJECT_ID}" \
+    --network="${NETWORK}" \
+    --region="${REGION}" \
+    --range="${PROXY_SUBNET_RANGE}" \
+    --purpose=REGIONAL_MANAGED_PROXY \
+    --role=ACTIVE
+  echo "    ✅ Proxy-only subnet '${PROXY_SUBNET_NAME}' created (${PROXY_SUBNET_RANGE})."
 fi
 
 echo "==> Fetching cluster credentials"

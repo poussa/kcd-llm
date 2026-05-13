@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: optimized-baseline-nvidia-gpu-vllm-decode
+spec:
+  replicas: 1
+  template:
+    spec:
+      nodeSelector:
+        cloud.google.com/gke-accelerator: nvidia-tesla-t4
+        cloud.google.com/gke-gpu-sharing-strategy: "time-sharing"
+        cloud.google.com/gke-max-shared-clients-per-gpu: "8"
+      containers:
+        - name: modelserver
+          args:
+            - "Qwen/Qwen3-0.6B"
+            - "--disable-access-log-for-endpoints=/health,/metrics,/v1/models"
+            - "--tensor-parallel-size=1"
+            - "--gpu-memory-utilization=0.3"
+            - "--max-model-len=8192"
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+            requests:
+              nvidia.com/gpu: "1"
