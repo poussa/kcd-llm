@@ -1,6 +1,8 @@
 # kcd-llm
 
-GKE cluster setup with NVIDIA L4 GPU time-slicing for running LLM workloads.
+GKE Autopilot cluster setup with NVIDIA GPU time-slicing for running LLM workloads.
+
+GKE Autopilot manages all nodes automatically — finds GPU capacity across zones in the region, installs drivers, and scales to zero when idle. No node pool management needed.
 
 ## Prerequisites
 
@@ -18,7 +20,7 @@ gcloud config set project YOUR_PROJECT_ID
 
 ## Check GPU Quota
 
-Before creating the cluster, verify you have L4 GPU quota in `europe-west4`:
+Before creating the cluster, verify you have GPU quota in your target region:
 
 ```bash
 gcloud compute regions describe europe-west4 \
@@ -30,19 +32,39 @@ gcloud compute regions describe europe-west4 \
 You need `NVIDIA_L4_GPUS` limit > 0. If not, request a quota increase at:
 **https://console.cloud.google.com/iam-admin/quotas** → filter "NVIDIA L4".
 
-## Create GKE Cluster
+> **Note:** L4 GPUs are available in `europe-west1/3/4/6`, `us-central1`, `us-east1/4`, `us-west1/4`, and others — but **not** in `europe-north1` (Finland). Check availability with:
+> ```bash
+> gcloud compute machine-types list --filter="name=g2-standard-4" --format="value(zone)" | sed 's/-[abcdf]$//' | sort -u
+> ```
 
-The script supports two modes, controlled by the `AUTOPILOT` env var (default: `true`).
-
-### Autopilot (Recommended)
-
-GKE manages all nodes automatically — no node pool configuration needed. GKE finds available GPU capacity across zones in the region automatically, handles driver installation, and scales to zero when idle.
+## Create Cluster
 
 ```bash
 ./create-gke-cluster.sh
 ```
 
-GPU time-slicing is configured per-pod via **node selectors** (no cluster-level setup needed):
+### Configuration
+
+| Variable       | Default           | Description        |
+|----------------|-------------------|--------------------|
+| `PROJECT_ID`   | `kcd-llm`         | GCP project ID     |
+| `CLUSTER_NAME` | `kcd-llm-cluster` | GKE cluster name   |
+| `REGION`       | `europe-west4`    | GCP region         |
+
+```bash
+# Example: use Frankfurt region
+REGION=europe-west3 ./create-gke-cluster.sh
+```
+
+### Delete Cluster
+
+```bash
+./create-gke-cluster.sh --delete
+```
+
+## GPU Time-Slicing
+
+Time-slicing is configured per-pod via **node selectors**. GKE NAP automatically provisions a node advertising 16 virtual GPU slots, allowing up to 16 pods to share one physical GPU.
 
 ```yaml
 spec:
@@ -56,81 +78,7 @@ spec:
         nvidia.com/gpu: "1"
 ```
 
-GKE NAP provisions a node advertising 16 virtual GPU slots, allowing up to 16 pods to share one physical GPU.
-
 See [`gpu-timeslice-test.yaml`](gpu-timeslice-test.yaml) for a working 4-pod example.
-
-### Standard Mode
-
-Manually managed node pools. Useful when you need more control over node configuration. Run `setup-gpu-timeslicing.sh` separately to configure time-slicing.
-
-```bash
-AUTOPILOT=false ./create-gke-cluster.sh
-```
-
-### Configuration
-
-All settings can be overridden via environment variables:
-
-| Variable           | Default              | Mode      | Description                            |
-|--------------------|----------------------|-----------|----------------------------------------|
-| `PROJECT_ID`       | `kcd-llm`            | Both      | GCP project ID                         |
-| `CLUSTER_NAME`     | `kcd-llm-cluster`    | Both      | GKE cluster name                       |
-| `AUTOPILOT`        | `true`               | Both      | `true` = Autopilot, `false` = Standard |
-| `REGION`           | `europe-west4`       | Autopilot | GCP region                             |
-| `ZONE`             | `europe-west4-a`     | Standard  | GCP zone (must support L4 GPUs)        |
-| `GPU_MACHINE_TYPE` | `g2-standard-4`      | Standard  | GPU node machine type                  |
-| `GPU_NODE_COUNT`   | `1`                  | Standard  | Initial GPU node count                 |
-| `GPU_NODE_MIN`     | `0`                  | Standard  | Autoscaler minimum (0 = scale to zero) |
-| `GPU_NODE_MAX`     | `3`                  | Standard  | Autoscaler maximum                     |
-| `CPU_MACHINE_TYPE` | `e2-standard-2`      | Standard  | CPU node machine type                  |
-| `CPU_NODE_COUNT`   | `1`                  | Standard  | CPU node count                         |
-
-### Delete Cluster
-
-```bash
-# Autopilot
-./create-gke-cluster.sh --delete
-
-# Standard
-AUTOPILOT=false CLUSTER_NAME=dev ZONE=europe-west4-a ./create-gke-cluster.sh --delete
-```
-
-## Configure GPU Time-Slicing (Standard mode only)
-
-> In Autopilot mode, time-slicing is configured per-pod via node selectors (see above). This section applies to Standard mode only.
-
-The GPU node pool autoscales from 0, so no GPU node exists until a workload requests one or you scale it manually. Before running the time-slicing setup, ensure a GPU node is present:
-
-```bash
-gcloud container clusters resize <CLUSTER_NAME> \
-  --node-pool=gpu-pool \
-  --num-nodes=1 \
-  --zone=europe-west4-a \
-  --project=$PROJECT_ID
-
-# Wait for the GPU node to become Ready
-kubectl get nodes -w
-```
-
-Once the GPU node is `Ready`, configure the NVIDIA device plugin to expose 16 virtual GPUs per physical L4:
-
-```bash
-./setup-gpu-timeslicing.sh
-```
-
-Override the number of slices:
-```bash
-REPLICAS=8 ./setup-gpu-timeslicing.sh
-```
-
-### Verify
-
-```bash
-kubectl get nodes -o json \
-  | jq '.items[].status.allocatable | with_entries(select(.key | contains("nvidia")))'
-# Expected: { "nvidia.com/gpu": "16" }
-```
 
 ## Testing
 
@@ -139,11 +87,11 @@ kubectl get nodes -o json \
 ```bash
 kubectl apply -f gpu-test-pod.yaml
 kubectl get pod gpu-test -w
-kubectl logs gpu-test   # should show nvidia-smi output
+kubectl logs gpu-test   # should show nvidia-smi output with GPU info
 kubectl delete pod gpu-test
 ```
 
-### Verify time-slicing (Autopilot)
+### Verify time-slicing
 
 ```bash
 kubectl apply -f gpu-timeslice-test.yaml
@@ -157,17 +105,3 @@ kubectl get nodes -o custom-columns='NAME:.metadata.name,GPU:.status.allocatable
 kubectl delete -f gpu-timeslice-test.yaml
 ```
 
-## GPU Workloads (Standard mode)
-
-GPU nodes are tainted — add this toleration to your workload manifests:
-
-```yaml
-tolerations:
-- key: nvidia.com/gpu
-  operator: Equal
-  value: present
-  effect: NoSchedule
-resources:
-  limits:
-    nvidia.com/gpu: "1"
-```
