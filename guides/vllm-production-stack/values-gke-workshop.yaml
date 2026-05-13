@@ -1,0 +1,60 @@
+# vLLM Production Stack — GKE Autopilot workshop values
+# One instance per group namespace, 1 time-sliced T4 GPU share.
+#
+# Deploy:
+#   helm repo add vllm https://vllm-project.github.io/production-stack
+#   helm install vllm-stack vllm/vllm-stack \
+#     -f guides/vllm-production-stack/values-gke-workshop.yaml \
+#     -n <group-namespace>
+
+servingEngineSpec:
+  # GKE Autopilot manages runtimeClass automatically
+  runtimeClassName: ""
+
+  modelSpec:
+  - name: "qwen3"
+    repository: "vllm/vllm-openai"
+    tag: "v0.19.1"
+    modelURL: "Qwen/Qwen3-0.6B"
+    replicaCount: 1
+
+    requestCPU: 4
+    requestMemory: "8Gi"
+    requestGPU: 1
+
+    # GKE Autopilot time-slicing node selectors
+    nodeSelectorTerms:
+    - matchExpressions:
+      - key: cloud.google.com/gke-accelerator
+        operator: In
+        values:
+        - nvidia-tesla-t4
+      - key: cloud.google.com/gke-gpu-sharing-strategy
+        operator: In
+        values:
+        - time-sharing
+      - key: cloud.google.com/gke-max-shared-clients-per-gpu
+        operator: In
+        values:
+        - "8"
+
+    vllmConfig:
+      maxModelLen: 8192
+      dtype: "float16"          # float16 for T4 (Turing, no bfloat16)
+      gpuMemoryUtilization: 0.3 # ~4.4 GiB — leaves headroom for other time-slice pods
+      enablePrefixCaching: true
+      tensorParallelSize: 1
+
+routerSpec:
+  enableRouter: true
+  replicaCount: 1
+  serviceType: ClusterIP
+  servicePort: 80
+  routingLogic: "roundrobin"
+  serviceDiscovery: "k8s"
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      memory: 512Mi
