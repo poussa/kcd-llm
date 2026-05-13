@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gpu-timeslice-test
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: gpu-timeslice-test
+  template:
+    metadata:
+      labels:
+        app: gpu-timeslice-test
+    spec:
+      nodeSelector:
+        cloud.google.com/gke-accelerator: nvidia-tesla-t4
+        cloud.google.com/gke-gpu-sharing-strategy: "time-sharing"
+        cloud.google.com/gke-max-shared-clients-per-gpu: "16"
+      containers:
+      - name: gpu-timeslice-test
+        image: nvidia/cuda:12.3.1-base-ubuntu22.04
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          while true; do
+            echo "=== Pod $HOSTNAME ==="
+            nvidia-smi --query-gpu=name,memory.total,memory.used,utilization.gpu --format=csv,noheader
+            sleep 30
+          done
+        resources:
+          limits:
+            nvidia.com/gpu: "1"
