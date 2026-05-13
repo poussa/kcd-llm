@@ -2,7 +2,12 @@
 
 ## Project Overview
 
-Infrastructure repo for a GKE Autopilot cluster with NVIDIA GPU time-slicing, intended for running LLM workloads. GKE Autopilot handles all node provisioning automatically — no node pool management required.
+Infrastructure repo for a **hands-on workshop** (10–15 participants, groups of 2–3). Each group works in their own Kubernetes namespace and gets 1 time-sliced GPU share. The workshop deploys LLM inference using **vLLM production stack** and **llm-d** on a shared GKE Autopilot cluster with NVIDIA GPU time-slicing.
+
+- Each group uses a dedicated namespace (e.g. `group-1`, `group-2`, ...)
+- 1 GPU time-slice per group (`nvidia.com/gpu: "1"` with time-sharing)
+- Inference stack: vLLM + llm-d optimized-baseline (prefix-cache-aware, load-aware routing)
+- GKE Autopilot handles all node provisioning automatically — no node pool management required
 
 ## Cluster Lifecycle
 
@@ -40,14 +45,14 @@ spec:
   nodeSelector:
     cloud.google.com/gke-accelerator: nvidia-tesla-t4      # or nvidia-l4
     cloud.google.com/gke-gpu-sharing-strategy: "time-sharing"
-    cloud.google.com/gke-max-shared-clients-per-gpu: "16"
+    cloud.google.com/gke-max-shared-clients-per-gpu: "8"
   containers:
   - resources:
       limits:
         nvidia.com/gpu: "1"
 ```
 
-GKE NAP then provisions a node advertising 16 virtual GPU slots automatically.
+GKE NAP then provisions a node advertising 8 virtual GPU slots automatically.
 
 ## Key Constraints
 
