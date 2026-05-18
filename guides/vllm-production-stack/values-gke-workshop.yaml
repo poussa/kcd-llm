@@ -28,7 +28,7 @@ servingEngineSpec:
       - key: cloud.google.com/gke-accelerator
         operator: In
         values:
-        - nvidia-tesla-t4
+        - nvidia-l4
       - key: cloud.google.com/gke-gpu-sharing-strategy
         operator: In
         values:
@@ -36,7 +36,7 @@ servingEngineSpec:
       - key: cloud.google.com/gke-max-shared-clients-per-gpu
         operator: In
         values:
-        - "8"
+        - "4"
 
     vllmConfig:
       maxModelLen: 8192

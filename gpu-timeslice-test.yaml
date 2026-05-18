@@ -12,10 +12,10 @@ spec:
       labels:
         app: gpu-timeslice-test
     spec:
-      nodeSelector:
-        cloud.google.com/gke-accelerator: nvidia-tesla-t4
-        cloud.google.com/gke-gpu-sharing-strategy: "time-sharing"
-        cloud.google.com/gke-max-shared-clients-per-gpu: "16"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
       containers:
       - name: gpu-timeslice-test
         image: nvidia/cuda:12.3.1-base-ubuntu22.04
